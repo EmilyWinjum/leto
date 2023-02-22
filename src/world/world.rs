@@ -1,17 +1,6 @@
-pub mod components {
-    pub struct Health(pub i32);
-    pub struct Name(pub &'static str);
-}
+use std::cell::{ RefCell, RefMut, };
 
-pub mod systems {
-}
-
-use components::*;
-
-use std::cell::{
-    RefCell, 
-    RefMut,
-};
+use super::comp::{ Component, ComponentVec, };
 
 pub struct World {
     entities_count: usize,
@@ -35,7 +24,7 @@ impl World {
         entity_id
     }
 
-    pub fn add_component_to_entity<ComponentType: 'static>(
+    pub fn add_component_to_entity<ComponentType: Component>(
             &mut self,
             entity: usize,
             component: ComponentType,
@@ -60,7 +49,19 @@ impl World {
         self.component_vecs.push(Box::new(RefCell::new(new_component_vec)));
     }
 
-    pub fn borrow_component_vec<ComponentType: 'static>(&self) -> Option<RefMut<Vec<Option<ComponentType>>>> {
+    pub fn borrow_component_vec<ComponentType: Component>(&self) -> Option<&Vec<Option<ComponentType>>> {
+        for component_vec in self.component_vecs.iter() {
+            if let Some(component_vec) = component_vec
+                .as_any()
+                .downcast_ref::<Vec<Option<ComponentType>>>()
+            {
+                return Some(&component_vec);
+            }
+        }
+        None
+    }
+
+    pub fn borrow_component_vec_mut<ComponentType: 'static>(&self) -> Option<RefMut<Vec<Option<ComponentType>>>> {
         for component_vec in self.component_vecs.iter() {
             if let Some(component_vec) = component_vec
                 .as_any()
@@ -70,25 +71,5 @@ impl World {
             }
         }
         None
-    }
-}
-
-trait ComponentVec {
-    fn as_any(&self) -> &dyn std::any::Any;
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
-    fn push_none(&mut self);
-}
-
-impl<T> ComponentVec for RefCell<Vec<Option<T>>> {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self as &dyn std::any::Any
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self as &mut dyn std::any::Any
-    }
-
-    fn push_none(&mut self) {
-        self.get_mut().push(None);
     }
 }
