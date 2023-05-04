@@ -3,12 +3,5 @@
 version = 3
 
 [[package]]
-name = "ecs"
+name = "leto"
 version = "0.1.0"
-
-[[package]]
-name = "physics"
-version = "0.1.0"
-dependencies = [
- "ecs",
-]

@@ -1,10 +1,5 @@
-extern crate leto;
-
-use crate::leto::{
-    world::world,
-    components::*,
-    systems::*,
-};
+use ecs::world;
+use physics::components::*;
 
 fn main() {
     let mut world = world::World::new();

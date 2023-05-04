@@ -1,4 +1,4 @@
-use crate::world::comp::Component;
+use ecs::comp::Component;
 
 pub struct Health(pub i32);
 
@@ -16,8 +16,8 @@ pub struct Position {
 impl Component for Position { }
 
 pub struct Velocity {
-    pub x: i32,
-    pub y: i32,
+    pub dx: i32,
+    pub dy: i32,
 }
 
 impl Component for Velocity { }
