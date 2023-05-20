@@ -1,8 +1,7 @@
-use ecs::world;
-use physics::components::*;
 
 fn main() {
-    let mut world = world::World::new();
+    /*
+    let mut world = register::Register::new();
     
     // Icarus's health is *not* looking good.
     // world.new_entity(Some(Health(-10)), Some(Name("Icarus")));
@@ -41,4 +40,5 @@ fn main() {
         }
         println!("Tick: {}", i);
     }
+    */
 }
