@@ -1,6 +1,17 @@
-use std::{ any::{Any, TypeId}, cell::RefCell, borrow::BorrowMut, collections::{hash_map::{IntoIter, Keys}, HashMap}, mem::swap, error::Error, };
+use std::{ any::{Any, TypeId}, cell::RefCell, collections::{HashMap, BTreeSet}};
 
 use crate::errors::StoreError;
+
+
+/// Defines the type identifier for an `Archetype`. all immutable instances are sorted
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct Types(BTreeSet<TypeId>);
+
+impl Default for Types {
+    fn default() -> Self {
+        Self(BTreeSet::new())
+    }
+}
 
 
 /// Defines a `Component`. Has a predefined memory size and can implement Any
@@ -8,7 +19,7 @@ use crate::errors::StoreError;
 /// `Component`s are data structs that can be dynamically attached to `Entity`ies.
 pub trait Component: Any + 'static {
     fn to_any_box(self) -> Box<dyn Any>;
-    fn to_component_store(&self) -> ComponentStore;
+    fn to_component_store(self) -> ComponentStore;
 }
 
 impl<T> Component for T
@@ -18,8 +29,8 @@ impl<T> Component for T
         Box::new(self)
     }
 
-    fn to_component_store(&self) -> ComponentStore {
-        self.into()
+    fn to_component_store(self) -> ComponentStore {
+        ComponentStore::new(self)
     }
 }
 
@@ -27,53 +38,62 @@ impl<T> Component for T
 pub struct ComponentBox(Box<dyn Component>);
 
 impl ComponentBox {
-    pub fn new<T>(comp: T) -> Self 
-        where T: Component
-    {
+    pub fn new<T: Component>(comp: T) -> Self {
         Self(Box::new(comp))
     }
 
-    pub fn cast_inner<T>(self) -> Result<T, StoreError>
-        where T: Component
-    {
+    pub fn cast_inner<T: Component>(self) -> Result<T, StoreError> {
         if let Ok(inner) = self.to_any_box().downcast::<T>() {
             Ok(*inner)
         }
         else {
-            Err(StoreError::MismatchedComponentTypes)
+            Err(StoreError::CannotCastToType)
         }
     }
 
-    pub fn create_store(&self) -> ComponentStore {
+    pub fn type_id(&self) -> TypeId {
+        self.0.type_id()
+    }
+
+    pub fn create_store(self) -> ComponentStore {
         self.0.to_component_store()
     }
 }
 
 
 /// Defines a `ComponentBundle`. Stores a single `Component with required type data.`
-pub struct ComponentBundle(HashMap<TypeId, ComponentBox>);
+pub struct ComponentBundle {
+    types: HashMap<TypeId, usize>,
+    components: Vec<ComponentBox>
+}
 
 impl ComponentBundle {
     pub fn new() -> Self {
-        Self(HashMap::new())
+        Self {
+            types: HashMap::new(),
+            components: Vec::new(),
+        }
     }
 
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.types.len()
     }
 
     pub fn push<T>(&mut self, comp: T)
         where T: Component
     {
-        self.0.insert(TypeId::of::<T>(), ComponentBox::new(comp));
+        self.types.insert(TypeId::of::<T>(), self.types.len());
+        self.components.push(ComponentBox::new(comp));
     }
 
-    pub fn into_iter(self) -> IntoIter<TypeId, ComponentBox> {
-        self.0.into_iter()
+    pub fn components(self) -> Vec<ComponentBox> {
+        self.components
     }
 
-    pub fn types(&self) -> Keys<TypeId, ComponentBox> {
-        self.0.keys()
+    pub fn types(&self) -> Types {
+        Types(self.types.keys()
+            .cloned()
+            .collect())
     }
 }
 
@@ -115,41 +135,29 @@ impl<T> ComponentVec for RefCell<Vec<T>>
     }
 
     fn swap_remove(&mut self, row: usize) {
-        self.borrow_mut().swap_remove(row);
+        self.get_mut().swap_remove(row);
     }
 }
 
 
 /// Defines a `ComponentStore`. Contains a `ComponentCollection` and information about its TypeId
-pub struct ComponentStore {
-    type_id: TypeId,
-    store: Box<dyn ComponentVec>,
-}
+pub struct ComponentStore (Box<dyn ComponentVec>);
 
 impl ComponentStore {
     /// Constructs a new `ComponentStore` of a type matching the initial value added
-    pub fn new<T>() -> Self
-        where T: Component
-    {
-        Self{
-            type_id: TypeId::of::<T>(),
-            store: Box::new(RefCell::new(Vec::<T>::new()))
-        }
-    }
-
-    pub fn push(&mut self, comp: ComponentBox) -> Result<(), StoreError> {  
-        self.store.push(comp)
+    pub fn new<T: Component>(comp: T) -> Self {
+        Self(Box::new(RefCell::new(Vec::<T>::from([comp]))))
     }
 
     pub fn len(&self) -> usize {
-        self.store.len()
+        self.0.len()
     }
-}
 
-impl<T> From<&T> for ComponentStore
-    where T: Component
-{
-    fn from(_: &T) -> Self {
-        Self::new::<T>()
+    pub fn push(&mut self, comp: ComponentBox) -> Result<(), StoreError> {  
+        self.0.push(comp)
+    }
+
+    pub fn swap_remove(&mut self, row: usize) {
+        self.0.swap_remove(row)
     }
 }

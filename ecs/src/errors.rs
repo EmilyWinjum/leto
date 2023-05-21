@@ -31,14 +31,14 @@ impl From<ArchetypeError> for EcsError {
 
 #[derive(Debug)]
 pub enum StoreError {
-    MismatchedComponentTypes,
+    CannotCastToType,
     Placeholder,
 }
 
 impl fmt::Display for StoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(match self {
-            Self::MismatchedComponentTypes => "invalid component type for column",
+            Self::CannotCastToType => "cannot cast to specified type",
             Self::Placeholder => "placeholder",
         })
     }
