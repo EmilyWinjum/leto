@@ -1,4 +1,4 @@
-use std::{ any::{Any, TypeId}, cell::RefCell, collections::{HashMap, BTreeSet}};
+use std::{ any::{Any, TypeId}, cell::RefCell, collections::{BTreeSet, BTreeMap}, vec::IntoIter};
 
 use crate::errors::StoreError;
 
@@ -43,7 +43,7 @@ impl ComponentBox {
     }
 
     pub fn cast_inner<T: Component>(self) -> Result<T, StoreError> {
-        if let Ok(inner) = self.to_any_box().downcast::<T>() {
+        if let Ok(inner) = self.0.to_any_box().downcast::<T>() {
             Ok(*inner)
         }
         else {
@@ -63,14 +63,14 @@ impl ComponentBox {
 
 /// Defines a `ComponentBundle`. Stores a single `Component with required type data.`
 pub struct ComponentBundle {
-    types: HashMap<TypeId, usize>,
+    types: BTreeMap<TypeId, usize>,
     components: Vec<ComponentBox>
 }
 
 impl ComponentBundle {
     pub fn new() -> Self {
         Self {
-            types: HashMap::new(),
+            types: BTreeMap::new(),
             components: Vec::new(),
         }
     }
@@ -82,18 +82,19 @@ impl ComponentBundle {
     pub fn push<T>(&mut self, comp: T)
         where T: Component
     {
-        self.types.insert(TypeId::of::<T>(), self.types.len());
+        let comp = ComponentBox::new(comp);
+        self.types.insert(comp.type_id(), self.types.len());
         self.components.push(ComponentBox::new(comp));
-    }
-
-    pub fn components(self) -> Vec<ComponentBox> {
-        self.components
     }
 
     pub fn types(&self) -> Types {
         Types(self.types.keys()
             .cloned()
             .collect())
+    }
+
+    pub fn component_iter(self) -> IntoIter<ComponentBox> {
+        self.components.into_iter()
     }
 }
 
@@ -103,9 +104,6 @@ impl ComponentBundle {
 /// 
 /// `ComponentCollection`s contain all of the information for `Entities` within a given `Archetype`.
 pub trait ComponentVec {
-    fn to_any(&self) -> &dyn Any;
-    fn to_any_mut(&mut self) -> &mut dyn Any;
-
     fn len(&self) -> usize;
     fn push(&mut self, comp: ComponentBox) -> Result<(), StoreError>;
     fn swap_remove(&mut self, row: usize);
@@ -114,16 +112,6 @@ pub trait ComponentVec {
 impl<T> ComponentVec for RefCell<Vec<T>>
     where T: Component
 {
-    /// Upcast from self into `Any`
-    fn to_any(&self) -> &dyn Any {
-        self
-    }
-
-    /// Same as `as_any`, except mutable
-    fn to_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
     /// Get length for internal storage
     fn len(&self) -> usize {
         self.borrow().len()

@@ -1,15 +1,66 @@
-use crate::{ 
-    archetype::ArchetypeStore, 
-    entity::{EntityStore, EntityId,}, 
-    errors::EcsError, component::ComponentBundle,
+use std::collections::HashMap;
+
+use crate::{
+    entity::{EntityStore, EntityId, Location,}, 
+    errors::EcsError, component::{ComponentBundle, Types}, archetype::Archetype,
 };
 
 
 pub struct World<'a> {
-    archetypes: ArchetypeStore<'a>,
+    index: HashMap<Types, usize>,
+    archetypes: Vec<Archetype<'a>>,
     entities: EntityStore,
 }
 
+impl World<'_> {
+    pub fn init() -> Self {
+        let default_archetype: Archetype = Archetype::default();
+        Self {
+            index: HashMap::from([(Types::default(), 0)]),
+            archetypes: Vec::from([default_archetype]),
+            entities: EntityStore::init(),
+        }
+    }
+
+    pub fn spawn(&mut self, bundle: ComponentBundle) -> Result<EntityId, EcsError> {
+        let entity: EntityId = self.entities.get_new_id()?;
+        let types: Types = bundle.types();
+
+        self.entities.set_location(
+            entity, 
+            if let Some(archetype_id) = self.get_archetype_id(types.clone()) {
+                Location::new(
+                    archetype_id, 
+                    self.archetypes[archetype_id].add_entity(bundle, entity)
+                )
+            }
+            else {
+                let archetype_id: usize = self.archetypes.len();
+                self.index.insert(types, archetype_id);
+                self.archetypes.push(Archetype::new(bundle, entity));
+
+                Location::new(archetype_id, 0)
+            }
+        );
+
+        Ok(entity)
+    }
+
+    pub fn kill(&mut self, entity: EntityId) -> Result<(), EcsError> {
+        let location = self.entities.get_location(entity)?;
+
+        self.archetypes[location.archetype].remove_entity(location.row);
+        self.entities.free(entity)?;
+
+        Ok(())
+    }
+
+    fn get_archetype_id(&self, types: Types) -> Option<usize> {
+        self.index.get(&types).copied()
+    }
+
+}
+/*
 
 impl World<'_> {
     pub fn new() -> Self {
@@ -27,7 +78,7 @@ impl World<'_> {
         todo!();
 
     }
-    /*
+
     /// Stores data provided by an `EntityBuilder::Done` variant using the provided function to
     /// initialize storage for the new `Entity`
     pub fn store<F>(&mut self, data: EntityInitData, mut init: F) -> Result<EntityId, EntityError> 
@@ -75,5 +126,5 @@ impl World<'_> {
 
         Ok(())
     }
-    */
-}
+    
+}*/

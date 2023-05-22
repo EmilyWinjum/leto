@@ -7,7 +7,7 @@ use crate::errors::EntityError;
 /// 
 /// `EntityId`s contain identifiers for unique entites, iterating upwards by
 /// generation when freed.
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Copy)]
 pub struct EntityId {
     id: u32,
     generation: u32,
@@ -18,14 +18,14 @@ pub struct EntityId {
 /// 
 /// `Location`s contain information for an `Entity`'s linked `Archetype` and
 /// its row within its storage.
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Location {
-    archetype: usize,
-    row: u32,
+    pub archetype: usize,
+    pub row: usize,
 }
 
 impl Location {
-    pub fn new(archetype: usize, row: u32) -> Self {
+    pub fn new(archetype: usize, row: usize) -> Self {
         Self {
             archetype,
             row,
@@ -72,24 +72,17 @@ impl EntityStore {
         }
     }
 
-    /// Gets an entity matching by both index and generation
-    fn fetch_entity(&self, id: &EntityId) -> Result<&Entity, EntityError> {
-        match self.entities.get(id.id as usize) {
-            Some(e) => 
-                if e.generation == id.generation { Ok(e) }
-                else { Err(EntityError::WrongGen) },
-            None => Err(EntityError::NotFound),
-        }
+    fn entity_status(&self, id: EntityId) -> Result<Option<Location>, EntityError> {
+        let location = self.entities.get(id.id as usize)
+            .ok_or(EntityError::NotFound)?
+            .location;
+
+        Ok(location)
     }
 
     /// Mutably gets an entity matching by both index and generation
-    fn fetch_entity_mut(&mut self, id: &EntityId) -> Result<&mut Entity, EntityError> {
-        match self.entities.get_mut(id.id as usize) {
-            Some(e) => 
-                if e.generation == id.generation { Ok(e) }
-                else { Err(EntityError::WrongGen) },
-            None => Err(EntityError::NotFound),
-        }
+    fn get_mut_entity(&mut self, id: EntityId) -> &mut Entity {
+        self.entities.get_mut(id.id as usize).expect("expected to find entity")
     }
 
     /// Allocates new `entity`s into the `entities` collection, returning their ids
@@ -142,40 +135,42 @@ impl EntityStore {
     /// Resets the location for a given `EntityId`, adding it to the `freed` list
     /// 
     /// Returns the freed location, expecting this data to be cleared
-    pub fn free<F>(&mut self, id: &EntityId) -> Result<Location, EntityError> {
-        let entity: &mut Entity = self.fetch_entity_mut(&id)?;
-        let location: Location = entity
-            .location
-            .clone()
-            .ok_or(EntityError::AlreadyFreed)?;
+    pub fn free(&mut self, id: EntityId) -> Result<Location, EntityError> {
+        let location = self.get_location(id)?;
+        let entity: &mut Entity = self.get_mut_entity(id);
         entity.location = None;
         self.freed.push(id.clone());
 
         Ok(location)
     }
 
+    pub fn get_location(&self, id: EntityId) -> Result<Location, EntityError> {
+        self.entity_status(id)?
+            .ok_or(EntityError::AlreadyFreed)
+    }
+
     /// Updates the inner `Location` for a given `EntityId`
     /// 
     /// # !!! Expects previous location to be irrelevant. Can cause storage leaks otherwise !!!
-    pub fn set_location(&mut self, id: &EntityId, location: Location) -> Result<(), EntityError> {
-        let entity: &mut Entity = self.fetch_entity_mut(id)?;
+    pub fn set_location(&mut self, id: EntityId, location: Location) {
+        let entity: &mut Entity = self.get_mut_entity(id);
         entity.location = Some(location);
+    }
 
-        Ok(())
+    pub fn clear_location(&mut self, id: EntityId) {
+        self.get_mut_entity(id).location = None;
     }
 
     /// Updates the locations of continuous `Entities` within an archetype
     /// 
     /// # !!! Expects previous location to be irrelevant. Can cause storage leaks otherwise !!!
-    pub fn set_many_location(&mut self, ids: &[EntityId], start: Location) -> Result<(), EntityError> {
-        for (count, id) in ids.iter().enumerate() {
-            let entity: &mut Entity = self.fetch_entity_mut(id)?;
+    pub fn set_many_location(&mut self, ids: &[EntityId], start: Location) {
+        for (count, id) in ids.iter().cloned().enumerate() {
+            let entity: &mut Entity = self.get_mut_entity(id);
             entity.location = Some(Location {
                 archetype: start.archetype,
-                row: start.row + count as u32
+                row: start.row + count
             })
         }
-
-        Ok(())
     }
 }
