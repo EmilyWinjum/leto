@@ -2,21 +2,21 @@ use std::collections::HashMap;
 
 use crate::{
     entity::{EntityStore, EntityId, Location,}, 
-    errors::EcsError, component::{ComponentBundle, Types}, archetype::Archetype,
+    errors::EcsError, component::{ComponentBundle, TypeBundle, ComponentBox}, archetype::{Archetype, ArchetypeEdge},
 };
 
 
-pub struct World<'a> {
-    index: HashMap<Types, usize>,
-    archetypes: Vec<Archetype<'a>>,
+pub struct World {
+    index: HashMap<TypeBundle, usize>,
+    archetypes: Vec<Archetype>,
     entities: EntityStore,
 }
 
-impl World<'_> {
+impl World {
     pub fn init() -> Self {
         let default_archetype: Archetype = Archetype::default();
         Self {
-            index: HashMap::from([(Types::default(), 0)]),
+            index: HashMap::from([(TypeBundle::default(), 0)]),
             archetypes: Vec::from([default_archetype]),
             entities: EntityStore::init(),
         }
@@ -24,14 +24,14 @@ impl World<'_> {
 
     pub fn spawn(&mut self, bundle: ComponentBundle) -> Result<EntityId, EcsError> {
         let entity: EntityId = self.entities.get_new_id()?;
-        let types: Types = bundle.types();
+        let types: TypeBundle = bundle.types();
 
         self.entities.set_location(
             entity, 
             if let Some(archetype_id) = self.get_archetype_id(types.clone()) {
                 Location::new(
                     archetype_id, 
-                    self.archetypes[archetype_id].add_entity(bundle, entity)
+                    self.archetypes[archetype_id].add(bundle, entity)
                 )
             }
             else {
@@ -46,85 +46,42 @@ impl World<'_> {
         Ok(entity)
     }
 
+    pub fn add_component(&mut self, entity: EntityId, comp: ComponentBox) -> Result<(), EcsError> {
+        let location: Location = self.entities.get_location(entity)?;
+        let source_idx: usize = location.archetype;
+
+        if let Some(edge) = self.archetypes[source_idx].edges.get(&comp.type_id()) {
+            let target_idx = edge.unwrap_add();
+            (&mut self.archetypes[source_idx])
+            .migrate_add(location.row, &mut self.archetypes[target_idx], comp);
+        }
+
+        todo!();
+    }
+
     pub fn kill(&mut self, entity: EntityId) -> Result<(), EcsError> {
         let location = self.entities.get_location(entity)?;
 
-        self.archetypes[location.archetype].remove_entity(location.row);
+        self.archetypes[location.archetype].remove(location.row);
         self.entities.free(entity)?;
 
         Ok(())
     }
 
-    fn get_archetype_id(&self, types: Types) -> Option<usize> {
+    fn get_archetype_id(&self, types: TypeBundle) -> Option<usize> {
         self.index.get(&types).copied()
     }
 
 }
-/*
 
-impl World<'_> {
-    pub fn new() -> Self {
-        Self {
-            archetypes: ArchetypeStore::init(),
-            entities: EntityStore::init(),
-        }
+
+/// A helper to get two mutable borrows from the same slice.
+fn index_twice<T>(slice: &mut [T], first: usize, second: usize) -> (&mut T, &mut T) {
+    if first < second {
+        let (a, b) = slice.split_at_mut(second);
+        (&mut a[first], &mut b[0])
+    } else {
+        let (a, b) = slice.split_at_mut(first);
+        (&mut b[0], &mut a[second])
     }
-    
-    pub fn spawn(&mut self, entity: ComponentBundle) -> Result<EntityId, EcsError> {
-        let id: EntityId = self.entities.get_new_id()?;
-
-        let location = self.archetypes.add_entity(id, entity);
-
-        todo!();
-
-    }
-
-    /// Stores data provided by an `EntityBuilder::Done` variant using the provided function to
-    /// initialize storage for the new `Entity`
-    pub fn store<F>(&mut self, data: EntityInitData, mut init: F) -> Result<EntityId, EntityError> 
-    where F: FnMut(EntityInitData) -> Result<u32, ArchetypeError>
-    {
-            let archetype = data.archetype.clone();
-            let id = self.get_id()?;
-            let row = init(data)?;
-            self.fetch_entity_mut(&id)?.location = Some(Location { archetype, row });
-
-            Ok(id)
-    }
-
-    /// Frees the data of a given `Entity` in `Archetype` storage and marks it in
-    /// the `freed` collection
-    pub fn free<'a, F>(&mut self, id: &EntityId, mut clear: F) -> Result<(), EntityError>
-        where F: FnMut(&Location) -> Result<EntityId, ArchetypeError> 
-        // returns the entity in the last row of archetype before removal
-    {
-        let location = self.fetch_entity(id)?.unwrap_location()?;
-        let moved = clear(&location)?;
-
-        if moved != *id {
-            self.fetch_entity_mut(&moved)?.location = Some(location);
-        }
-
-        self.fetch_entity_mut(id)?.reset();
-        self.freed.push(id.id as usize);
-
-        Ok(())
-    }
-
-    /// Edits the given `Entity` using the given function to modify the location of the entity
-    pub fn edit<T, F>(&mut self, id: &EntityId, component: &T, mut edit: F) -> Result<(), EntityError>
-        where F: FnMut(&Location, &T) -> Result<(EntityId, Location), ArchetypeError>
-    {
-        let location = self.fetch_entity(id)?.unwrap_location()?;
-        let (moved, new_loc) = edit(&location, component)?;
-
-        if moved != *id {
-            self.fetch_entity_mut(&moved)?.location = Some(location);
-        }
-
-        self.fetch_entity_mut(id)?.location = Some(new_loc);
-
-        Ok(())
-    }
-    
-}*/
+}

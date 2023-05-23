@@ -32,6 +32,7 @@ impl From<ArchetypeError> for EcsError {
 #[derive(Debug)]
 pub enum StoreError {
     CannotCastToType,
+    TypeNotInBundle,
     Placeholder,
 }
 
@@ -39,24 +40,13 @@ impl fmt::Display for StoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(match self {
             Self::CannotCastToType => "cannot cast to specified type",
+            Self::TypeNotInBundle => "type is not present in bundle",
             Self::Placeholder => "placeholder",
         })
     }
 }
 
 impl Error for StoreError {}
-
-impl From<EntityError> for StoreError {
-    fn from(err: EntityError) -> Self {
-        Self::Placeholder
-    }
-}
-
-impl From<ArchetypeError> for StoreError {
-    fn from(err: ArchetypeError) -> Self {
-        Self::Placeholder
-    }
-}
 
 
 #[derive(Debug)]
@@ -97,6 +87,7 @@ impl From<TryFromIntError> for EntityError {
 #[derive(Debug)]
 pub enum ArchetypeError {
     TypeNotAvailable,
+    NoEdge,
     Placeholder,
 }
 
@@ -104,6 +95,7 @@ impl fmt::Display for ArchetypeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(match self {
             Self::TypeNotAvailable => "type not available in archetype",
+            Self::NoEdge => "no archetype edge exists for type",
             Self::Placeholder => "placeholder",
         })
     }
