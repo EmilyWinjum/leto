@@ -1,4 +1,4 @@
-use std::{ any::{Any, TypeId}, cell::{RefCell, RefMut}, collections::{BTreeSet, BTreeMap, HashMap}, vec::IntoIter};
+use std::{ any::{Any, TypeId}, cell::RefCell, collections::{BTreeSet, BTreeMap, HashMap}, vec::IntoIter};
 
 use crate::errors::StoreError;
 
@@ -189,8 +189,7 @@ impl<T> ComponentVec for RefCell<Vec<T>>
             .borrow_mut()
             .push(comp);
 
-
-        todo!();
+        Ok(())
     }
 }
 

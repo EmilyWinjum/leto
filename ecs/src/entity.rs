@@ -60,7 +60,7 @@ impl Entity {
 /// `EntityStore`s track all `EntityId`s and ensures their uniqueness.
 pub struct EntityStore {
     entities: Vec<Entity>,
-    freed: Vec<EntityId>,
+    freed: Vec<u32>,
 }
 
 impl EntityStore {
@@ -105,8 +105,11 @@ impl EntityStore {
     /// by creating new ids as a fallback
     pub fn get_new_ids(&mut self, count: u32) -> Result<Vec<EntityId>, EntityError> {
         let free_count = count.min(self.freed.len() as u32);
-        let mut ids: Vec<EntityId> = self.freed
-            .drain(self.freed.len() - free_count as usize..)
+        let mut ids: Vec<EntityId> = self.freed.drain(self.freed.len() - free_count as usize..)
+            .map(|id| {
+                let generation = self.entities[id as usize].generation;
+                EntityId { id, generation }
+            })
             .collect();
         
         if count > free_count {
@@ -123,10 +126,11 @@ impl EntityStore {
     /// Gets a unique `EntityId` from either the `freed` list or by creating a new id as a fallback
     pub fn get_new_id(&mut self) -> Result<EntityId, EntityError> {
         if let Some(id) = self.freed.pop() {
-            Ok(id)
+            let generation: u32 = self.entities[id as usize].generation;
+            Ok(EntityId {id, generation,})
         }
         else {
-            let id = u32::try_from(self.entities.len())?;
+            let id: u32 = u32::try_from(self.entities.len())?;
             self.entities.push(Entity::new());
             Ok(EntityId { id, generation: 0, })
         }
@@ -139,7 +143,8 @@ impl EntityStore {
         let location = self.get_location(id)?;
         let entity: &mut Entity = self.get_mut_entity(id);
         entity.location = None;
-        self.freed.push(id.clone());
+        entity.generation += 1;
+        self.freed.push(id.id.clone());
 
         Ok(location)
     }
@@ -155,10 +160,6 @@ impl EntityStore {
     pub fn set_location(&mut self, id: EntityId, location: Location) {
         let entity: &mut Entity = self.get_mut_entity(id);
         entity.location = Some(location);
-    }
-
-    pub fn clear_location(&mut self, id: EntityId) {
-        self.get_mut_entity(id).location = None;
     }
 
     /// Updates the locations of continuous `Entities` within an archetype

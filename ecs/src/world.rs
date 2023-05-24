@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, any::TypeId};
 
 use crate::{
     entity::{EntityStore, EntityId, Location,}, 
-    errors::EcsError, component::{ComponentBundle, TypeBundle, ComponentBox}, archetype::{Archetype, ArchetypeEdge},
+    errors::EcsError, component::{ComponentBundle, TypeBundle}, archetype::{Archetype, Migration},
 };
 
 
@@ -46,17 +46,67 @@ impl World {
         Ok(entity)
     }
 
-    pub fn add_component(&mut self, entity: EntityId, comp: ComponentBox) -> Result<(), EcsError> {
+    pub fn edit_component(&mut self, entity: EntityId, op: Migration) -> Result<(), EcsError> {
         let location: Location = self.entities.get_location(entity)?;
         let source_idx: usize = location.archetype;
+        let new_type: TypeId = match &op {
+            Migration::Add(comp) => {
+                let add = comp.type_id();
+                assert!(!self.archetypes[source_idx].has_type(add));
+                add
+            }
+            Migration::Remove(type_id) => {
+                assert!(self.archetypes[source_idx].has_type(*type_id));
+                *type_id
+            }
+        };
+        let moved: EntityId;
+        let new_row: usize;
 
-        if let Some(edge) = self.archetypes[source_idx].edges.get(&comp.type_id()) {
-            let target_idx = edge.unwrap_add();
-            (&mut self.archetypes[source_idx])
-            .migrate_add(location.row, &mut self.archetypes[target_idx], comp);
+
+        let target_idx: usize = if let Some(&target_idx) = self.archetypes[source_idx].edges.get(&new_type) {
+            let (source, target) = self.mutate_archetypes(source_idx, target_idx);
+            (moved, new_row) = source.migrate(target, location.row, op);
+
+            target_idx
         }
+        else {
+            let old_bundle: TypeBundle = self.archetypes[source_idx].types();
+            let type_bundle: TypeBundle = if op.is_add() {
+                old_bundle.add_type(new_type)
+            }
+            else {
+                old_bundle.remove_type(new_type)
+            };
 
-        todo!();
+
+            let target_idx = if let Some(target_idx) = self.get_archetype_id(type_bundle.clone()) {
+                let (source, target) = self.mutate_archetypes(source_idx, target_idx);
+                (moved, new_row) = source.migrate(target, location.row, op);
+                
+                target_idx
+            }
+            else {
+                let migration = self.archetypes[source_idx].migrate_to_bundle(location.row);
+                (moved, new_row) = (migration.0, 0);
+                let target_idx = self.archetypes.len();
+                let new_archetype = Archetype::new(migration.1, entity);
+                self.index.insert(type_bundle, target_idx);
+                self.archetypes.push(new_archetype);
+
+                target_idx
+            };
+
+            self.archetypes[source_idx].edges.insert(new_type, target_idx);
+            self.archetypes[target_idx].edges.insert(new_type, source_idx);
+
+            target_idx
+        };
+
+        self.entities.set_location(entity, Location::new(target_idx, new_row));
+        self.entities.set_location(moved, location);
+
+        Ok(())
     }
 
     pub fn kill(&mut self, entity: EntityId) -> Result<(), EcsError> {
@@ -72,16 +122,10 @@ impl World {
         self.index.get(&types).copied()
     }
 
-}
-
-
-/// A helper to get two mutable borrows from the same slice.
-fn index_twice<T>(slice: &mut [T], first: usize, second: usize) -> (&mut T, &mut T) {
-    if first < second {
-        let (a, b) = slice.split_at_mut(second);
+    fn mutate_archetypes(&mut self, first: usize, second: usize) -> (&mut Archetype, &mut Archetype) {
+        assert!(first < second);
+        let (a, b) = self.archetypes.split_at_mut(second);
         (&mut a[first], &mut b[0])
-    } else {
-        let (a, b) = slice.split_at_mut(first);
-        (&mut b[0], &mut a[second])
     }
+
 }

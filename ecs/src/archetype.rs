@@ -1,25 +1,18 @@
 use std::{collections::HashMap, any::TypeId};
 
-use crate::{component::{ComponentStore, ComponentBundle, ComponentBox, TypeBundle}, entity::EntityId, errors::ArchetypeError};
+use crate::{component::{ComponentStore, ComponentBundle, ComponentBox, TypeBundle}, entity::EntityId};
 
 
-pub enum ArchetypeEdge {
-    Add(usize),
-    Remove(usize),
+pub enum Migration {
+    Add(ComponentBox),
+    Remove(TypeId),
 }
 
-impl ArchetypeEdge {
-    pub fn unwrap_add(&self) -> usize {
+impl Migration {
+    pub fn is_add(&self) -> bool {
         match self {
-            Self::Add(archetype) => *archetype,
-            _ => panic!("expected edge to be for addition"),
-        }
-    }
-
-    pub fn unwrap_remove(&self) -> usize {
-        match self {
-            Self::Remove(archetype) => *archetype,
-            _ => panic!("expected edge to be for removal"),
+            Self::Add(_) => true,
+            _ => false,
         }
     }
 }
@@ -29,10 +22,19 @@ pub struct Archetype {
     index: HashMap<TypeId, usize>,
     storage: Box<[ComponentStore]>,
     entities: Vec<EntityId>,
-    pub edges: HashMap<TypeId, ArchetypeEdge>,
+    pub edges: HashMap<TypeId, usize>,
 }
 
 impl Archetype {
+    fn get_last_entity(&self) -> EntityId {
+        self.entities[self.entities.len()]
+    }
+
+    fn get_storage_mut(&mut self, type_id: TypeId) -> Option<&mut ComponentStore> {
+        self.index.get(&type_id)
+            .and_then(|&idx| Some(&mut self.storage[idx]))
+    }
+
     pub fn new(bundle: ComponentBundle, entity_id: EntityId) -> Self {
         let mut index: HashMap<TypeId, usize> = HashMap::new();
         let mut storage: Vec<ComponentStore> = Vec::new();
@@ -55,9 +57,8 @@ impl Archetype {
         (&self.index).into()
     }
 
-    fn get_storage_mut(&mut self, type_id: TypeId) -> Option<&mut ComponentStore> {
-        self.index.get(&type_id)
-            .and_then(|&idx| Some(&mut self.storage[idx]))
+    pub fn has_type(&self, type_id: TypeId) -> bool {
+        self.index.get(&type_id).is_some()
     }
 
     pub fn add(&mut self, bundle: ComponentBundle, entity_id: EntityId) -> usize {
@@ -73,10 +74,6 @@ impl Archetype {
         row
     }
 
-    fn get_last_entity(&self) -> EntityId {
-        self.entities[self.entities.len()]
-    }
-
     pub fn remove(&mut self, row: usize) -> EntityId {
         let entity: EntityId = self.get_last_entity();
         for idx in self.index.values() {
@@ -87,46 +84,43 @@ impl Archetype {
         entity
     }
 
-    pub fn migrate_add(&mut self, row: usize, target: &mut Archetype, comp: ComponentBox) -> (EntityId, usize) {
+    pub fn migrate(&mut self, target: &mut Self, row: usize, op: Migration) -> (EntityId, usize) {
         let moved: EntityId = self.get_last_entity();
-        let target_row: usize = target.entities.len();
-        let current: EntityId = self.entities.swap_remove(row);
+        let target_row = target.entities.len();
+        let current = self.entities.swap_remove(row);
         target.entities.push(current);
-        for (&type_id, &idx) in self.index.iter() {
-            let source: &mut ComponentStore = &mut self.storage[idx];
-            let target: &mut ComponentStore = &mut target.get_storage_mut(type_id)
-                .expect("expected target to contain storage for type");
-            source.migrate(row, target)
-                .expect("expected types to be compatible");
+        match op {
+            Migration::Add(comp) => {
+                for (&type_id, &idx) in self.index.iter() {
+                    let source_store: &mut ComponentStore = &mut self.storage[idx];
+                    let target_store: &mut ComponentStore = &mut target.get_storage_mut(type_id)
+                        .expect("expected target to contain storage for type");
+                    source_store.migrate(row, &target_store)
+                        .expect("expected types to be compatible");
+                }
+                target.get_storage_mut(comp.type_id())
+                    .expect("expected to find type in archetype")
+                    .push(comp)
+                    .expect("expected types to be compatible");
+            }
+            Migration::Remove(type_id) => {
+                for (&type_id, &idx) in target.index.iter() {
+                    let source_store: &mut ComponentStore = &mut self.get_storage_mut(type_id)
+                        .expect("expected self to contain storage for type");
+                    let target_store: &mut ComponentStore = &mut target.storage[idx];
+                    source_store.migrate(row, target_store)
+                        .expect("expected types to be compatible");
+                }
+                self.get_storage_mut(type_id)
+                    .expect("expected to find type in archetype")
+                    .swap_remove(row);
+            }
         }
-        target.get_storage_mut(comp.type_id())
-            .expect("expected to find type in archetype")
-            .push(comp)
-            .expect("expected types to be compatible");
 
         (moved, target_row)
     }
 
-    pub fn migrate_remove(&mut self, row: usize, target: &mut Archetype, type_id: TypeId) -> (EntityId, usize) {
-        let moved: EntityId = self.get_last_entity();
-        let target_row: usize = target.entities.len();
-        let current: EntityId = self.entities.swap_remove(row);
-        target.entities.push(current);
-        for (&type_id, &idx) in target.index.iter() {
-            let source: &mut ComponentStore = &mut self.get_storage_mut(type_id)
-                .expect("expected self to contain storage for type");
-            let target: &mut ComponentStore = &mut target.storage[idx];
-            source.migrate(row, target)
-                .expect("expected types to be compatible");
-        }
-        self.get_storage_mut(type_id)
-            .expect("expected to find type in archetype")
-            .swap_remove(row);
-
-        (moved, target_row)
-    }
-
-    pub fn migrate_to_bundle(&mut self, row: usize) -> Result<(EntityId, ComponentBundle), ArchetypeError> {
+    pub fn migrate_to_bundle(&mut self, row: usize) -> (EntityId, ComponentBundle) {
         let mut bundle: ComponentBundle = ComponentBundle::new();
         for idx in self.index.values() {
             let comp: ComponentBox = self.storage[*idx]
@@ -136,7 +130,7 @@ impl Archetype {
         let entity = self.get_last_entity();
         self.entities.swap_remove(row);
 
-        Ok((entity, bundle))
+        (entity, bundle)
     }
 }
 

@@ -3,13 +3,13 @@ use std::{error::Error, num::TryFromIntError};
 
 #[derive(Debug)]
 pub enum EcsError {
-    Placeholder,
+    Placeholder(String),
 }
 
 impl fmt::Display for EcsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(match self {
-            Self::Placeholder => "placeholder",
+            Self::Placeholder(message) => message,
         })
     }
 }
@@ -18,13 +18,13 @@ impl Error for EcsError {}
 
 impl From<EntityError> for EcsError {
     fn from(err: EntityError) -> Self {
-        Self::Placeholder
+        Self::Placeholder(err.to_string())
     }
 }
 
 impl From<ArchetypeError> for EcsError {
     fn from(err: ArchetypeError) -> Self {
-        Self::Placeholder
+        Self::Placeholder(err.to_string())
     }
 }
 
