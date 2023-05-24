@@ -10,10 +10,7 @@ pub enum Migration {
 
 impl Migration {
     pub fn is_add(&self) -> bool {
-        match self {
-            Self::Add(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::Add(_))
     }
 }
 
@@ -31,8 +28,7 @@ impl Archetype {
     }
 
     fn get_storage_mut(&mut self, type_id: TypeId) -> Option<&mut ComponentStore> {
-        self.index.get(&type_id)
-            .and_then(|&idx| Some(&mut self.storage[idx]))
+        self.index.get(&type_id).map(|&idx| &mut self.storage[idx])
     }
 
     pub fn new(bundle: ComponentBundle, entity_id: EntityId) -> Self {
@@ -93,9 +89,9 @@ impl Archetype {
             Migration::Add(comp) => {
                 for (&type_id, &idx) in self.index.iter() {
                     let source_store: &mut ComponentStore = &mut self.storage[idx];
-                    let target_store: &mut ComponentStore = &mut target.get_storage_mut(type_id)
+                    let target_store: &mut ComponentStore = target.get_storage_mut(type_id)
                         .expect("expected target to contain storage for type");
-                    source_store.migrate(row, &target_store)
+                    source_store.migrate(row, target_store)
                         .expect("expected types to be compatible");
                 }
                 target.get_storage_mut(comp.type_id())
@@ -105,7 +101,7 @@ impl Archetype {
             }
             Migration::Remove(type_id) => {
                 for (&type_id, &idx) in target.index.iter() {
-                    let source_store: &mut ComponentStore = &mut self.get_storage_mut(type_id)
+                    let source_store: &mut ComponentStore = self.get_storage_mut(type_id)
                         .expect("expected self to contain storage for type");
                     let target_store: &mut ComponentStore = &mut target.storage[idx];
                     source_store.migrate(row, target_store)
@@ -121,7 +117,7 @@ impl Archetype {
     }
 
     pub fn migrate_to_bundle(&mut self, row: usize) -> (EntityId, ComponentBundle) {
-        let mut bundle: ComponentBundle = ComponentBundle::new();
+        let mut bundle: ComponentBundle = ComponentBundle::default();
         for idx in self.index.values() {
             let comp: ComponentBox = self.storage[*idx]
                     .swap_remove_to_box(row);

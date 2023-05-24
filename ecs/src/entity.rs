@@ -38,19 +38,10 @@ impl Location {
 /// 
 /// `Entity` structs contain lookup information for finding attached
 /// components within their associated archetypes.
+#[derive(Default)]
 pub struct Entity {
     generation: u32,
     location: Option<Location>,
-}
-
-impl Entity {
-    /// Create a new `Entity` of `generation` 0 that has not been given storage.
-    pub fn new() -> Self {
-        Self {
-            generation: 0,
-            location: None,
-        }
-    }
 }
 
 
@@ -91,7 +82,7 @@ impl EntityStore {
 
         if let Some(new_len) = entities_len.checked_add(count) {
             self.entities.extend(
-                (entities_len..new_len).map(|_| Entity::new())
+                (entities_len..new_len).map(|_| Entity::default())
             );
 
             Ok(entities_len..new_len)
@@ -115,7 +106,6 @@ impl EntityStore {
         if count > free_count {
             ids.extend(
                 &mut self.seed_new_ids(count - free_count)?
-                .into_iter()
                 .map(|id| EntityId { id, generation: 0, })
             );
         }
@@ -131,7 +121,7 @@ impl EntityStore {
         }
         else {
             let id: u32 = u32::try_from(self.entities.len())?;
-            self.entities.push(Entity::new());
+            self.entities.push(Entity::default());
             Ok(EntityId { id, generation: 0, })
         }
     }
@@ -144,7 +134,7 @@ impl EntityStore {
         let entity: &mut Entity = self.get_mut_entity(id);
         entity.location = None;
         entity.generation += 1;
-        self.freed.push(id.id.clone());
+        self.freed.push(id.id);
 
         Ok(location)
     }

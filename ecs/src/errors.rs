@@ -64,13 +64,13 @@ impl fmt::Display for EntityError {
             Self::TooManyEntities(message) => 
                 format!("too many entities{}", message),
             Self::FreedListTooSmall => 
-                format!("freed list is too small for request"),
+                "freed list is too small for request".to_string(),
             Self::NotFound => 
-                format!("entity not found"),
+                "entity not found".to_string(),
             Self::WrongGen => 
-                format!("generations don't match"),
+                "generations don't match".to_string(),
             Self::AlreadyFreed => 
-                format!("entity already freed"),
+                "entity already freed".to_string(),
         }.as_str())
     }
 }

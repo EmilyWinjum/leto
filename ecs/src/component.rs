@@ -4,7 +4,7 @@ use crate::errors::StoreError;
 
 
 /// Defines the type identifier for an `Archetype`. all immutable instances are sorted
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, PartialEq, Eq, Hash)]
 pub struct TypeBundle(BTreeSet<TypeId>);
 
 impl TypeBundle {
@@ -39,12 +39,6 @@ impl From<&BTreeMap<TypeId, usize>> for TypeBundle {
                 .cloned()
                 .collect()
         )
-    }
-}
-
-impl Default for TypeBundle {
-    fn default() -> Self {
-        Self(BTreeSet::new())
     }
 }
 
@@ -96,23 +90,13 @@ impl ComponentBox {
 
 
 /// Defines a `ComponentBundle`. Stores a single `Component with required type data.`
+#[derive(Default)]
 pub struct ComponentBundle {
     index: BTreeMap<TypeId, usize>,
     components: Vec<ComponentBox>
 }
 
 impl ComponentBundle {
-    pub fn new() -> Self {
-        Self {
-            index: BTreeMap::new(),
-            components: Vec::new(),
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.index.len()
-    }
-
     pub fn push<T>(&mut self, comp: T)
         where T: Component
     {
@@ -149,7 +133,6 @@ impl ComponentBundle {
 /// `ComponentCollection`s contain all of the information for `Entities` within a given `Archetype`.
 pub trait ComponentVec {
     fn to_any(&self) -> &dyn Any;
-    fn len(&self) -> usize;
     fn push(&mut self, comp: ComponentBox) -> Result<(), StoreError>;
     fn swap_remove(&mut self, row: usize);
     fn swap_remove_to_box(&mut self, row: usize) -> ComponentBox;
@@ -161,11 +144,6 @@ impl<T> ComponentVec for RefCell<Vec<T>>
 {
     fn to_any(&self) -> &dyn Any {
         self
-    }
-
-    /// Get length for internal storage
-    fn len(&self) -> usize {
-        self.borrow().len()
     }
 
     fn push(&mut self, comp: ComponentBox) -> Result<(), StoreError> {
@@ -201,10 +179,6 @@ impl ComponentStore {
     /// Constructs a new `ComponentStore` of a type matching the initial value added
     pub fn new<T: Component>(comp: T) -> Self {
         Self(Box::new(RefCell::new(Vec::<T>::from([comp]))))
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
     }
 
     pub fn push(&mut self, comp: ComponentBox) -> Result<(), StoreError> {  
