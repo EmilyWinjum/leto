@@ -1,7 +1,11 @@
-use std::{ any::{Any, TypeId}, cell::RefCell, collections::{BTreeSet, BTreeMap, HashMap}, vec::IntoIter};
+use std::{
+    any::{Any, TypeId},
+    cell::RefCell,
+    collections::{BTreeMap, BTreeSet, HashMap},
+    vec::IntoIter,
+};
 
 use crate::errors::StoreError;
-
 
 /// Defines the type identifier for an `Archetype`. all immutable instances are sorted
 #[derive(Default, Clone, PartialEq, Eq, Hash)]
@@ -23,28 +27,18 @@ impl TypeBundle {
 
 impl From<&HashMap<TypeId, usize>> for TypeBundle {
     fn from(types: &HashMap<TypeId, usize>) -> Self {
-        Self(
-            types
-                .keys()
-                .cloned()
-                .collect()
-        )
+        Self(types.keys().cloned().collect())
     }
 }
 
 impl From<&BTreeMap<TypeId, usize>> for TypeBundle {
     fn from(types: &BTreeMap<TypeId, usize>) -> Self {
-        Self(
-            types.keys()
-                .cloned()
-                .collect()
-        )
+        Self(types.keys().cloned().collect())
     }
 }
 
-
 /// Defines a `Component`. Has a predefined memory size and can implement Any
-/// 
+///
 /// `Component`s are data structs that can be dynamically attached to `Entity`ies.
 pub trait Component: Any + 'static {
     fn to_any_box(self) -> Box<dyn Any>;
@@ -52,7 +46,8 @@ pub trait Component: Any + 'static {
 }
 
 impl<T> Component for T
-    where T: Any + 'static
+where
+    T: Any + 'static,
 {
     fn to_any_box(self) -> Box<dyn Any> {
         Box::new(self)
@@ -63,7 +58,6 @@ impl<T> Component for T
     }
 }
 
-
 pub struct ComponentBox(Box<dyn Component>);
 
 impl ComponentBox {
@@ -72,7 +66,9 @@ impl ComponentBox {
     }
 
     pub fn cast_inner<T: Component>(self) -> Result<T, StoreError> {
-        let inner = self.0.to_any_box()
+        let inner = self
+            .0
+            .to_any_box()
             .downcast::<T>()
             .or(Err(StoreError::CannotCastToType))?;
 
@@ -88,17 +84,17 @@ impl ComponentBox {
     }
 }
 
-
 /// Defines a `ComponentBundle`. Stores a single `Component with required type data.`
 #[derive(Default)]
 pub struct ComponentBundle {
     index: BTreeMap<TypeId, usize>,
-    components: Vec<ComponentBox>
+    components: Vec<ComponentBox>,
 }
 
 impl ComponentBundle {
     pub fn push<T>(&mut self, comp: T)
-        where T: Component
+    where
+        T: Component,
     {
         let comp = ComponentBox::new(comp);
         self.index.insert(comp.type_id(), self.index.len());
@@ -106,10 +102,14 @@ impl ComponentBundle {
     }
 
     pub fn remove(&mut self, type_id: TypeId) -> Result<(), StoreError> {
-        let moved = self.components.last()
+        let moved = self
+            .components
+            .last()
             .expect("expected bundle to contain a value")
             .type_id();
-        let idx = self.index.remove(&type_id)
+        let idx = self
+            .index
+            .remove(&type_id)
             .ok_or(StoreError::TypeNotInBundle)?;
         self.components.swap_remove(idx);
         self.index.insert(moved, idx);
@@ -126,10 +126,9 @@ impl ComponentBundle {
     }
 }
 
-
 /// Defines a `ComponentCollection`. Has implementations for up/downcasting between
 /// native type and `Any`
-/// 
+///
 /// `ComponentCollection`s contain all of the information for `Entities` within a given `Archetype`.
 pub trait ComponentVec {
     fn to_any(&self) -> &dyn Any;
@@ -140,7 +139,8 @@ pub trait ComponentVec {
 }
 
 impl<T> ComponentVec for RefCell<Vec<T>>
-    where T: Component
+where
+    T: Component,
 {
     fn to_any(&self) -> &dyn Any {
         self
@@ -161,7 +161,9 @@ impl<T> ComponentVec for RefCell<Vec<T>>
 
     fn migrate(&mut self, row: usize, target: &ComponentStore) -> Result<(), StoreError> {
         let comp: T = self.get_mut().swap_remove(row);
-        target.0.to_any()
+        target
+            .0
+            .to_any()
             .downcast_ref::<RefCell<Vec<T>>>()
             .ok_or(StoreError::CannotCastToType)?
             .borrow_mut()
@@ -171,9 +173,8 @@ impl<T> ComponentVec for RefCell<Vec<T>>
     }
 }
 
-
 /// Defines a `ComponentStore`. Contains a `ComponentCollection` and information about its TypeId
-pub struct ComponentStore (Box<dyn ComponentVec>);
+pub struct ComponentStore(Box<dyn ComponentVec>);
 
 impl ComponentStore {
     /// Constructs a new `ComponentStore` of a type matching the initial value added
@@ -181,7 +182,7 @@ impl ComponentStore {
         Self(Box::new(RefCell::new(Vec::<T>::from([comp]))))
     }
 
-    pub fn push(&mut self, comp: ComponentBox) -> Result<(), StoreError> {  
+    pub fn push(&mut self, comp: ComponentBox) -> Result<(), StoreError> {
         self.0.push(comp)
     }
 

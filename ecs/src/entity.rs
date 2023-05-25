@@ -2,23 +2,21 @@ use std::ops::Range;
 
 use crate::errors::EntityError;
 
-
 /// Defines an `EntityId`. Contains both an `id` and `generation`
-/// 
+///
 /// `EntityId`s contain identifiers for unique entites, iterating upwards by
 /// generation when freed.
-#[derive(PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct EntityId {
     id: u32,
     generation: u32,
 }
 
-
 /// Defines a `Location`. Contains information about entity storage location
-/// 
+///
 /// `Location`s contain information for an `Entity`'s linked `Archetype` and
 /// its row within its storage.
-#[derive(Clone, Copy)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Location {
     pub archetype: usize,
     pub row: usize,
@@ -26,69 +24,63 @@ pub struct Location {
 
 impl Location {
     pub fn new(archetype: usize, row: usize) -> Self {
-        Self {
-            archetype,
-            row,
-        }
+        Self { archetype, row }
     }
 }
 
-
 /// Defines an `Entity`. Contains storage data and an identifier
-/// 
+///
 /// `Entity` structs contain lookup information for finding attached
 /// components within their associated archetypes.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Entity {
     generation: u32,
     location: Option<Location>,
 }
 
-
 /// Defines an `EntityStore`. Contains a list of `Entity`s in service as well as freed `EntityId`s
 /// for reuse.
-/// 
+///
 /// `EntityStore`s track all `EntityId`s and ensures their uniqueness.
+#[derive(Default)]
 pub struct EntityStore {
     entities: Vec<Entity>,
     freed: Vec<u32>,
+    count: u32,
 }
 
 impl EntityStore {
-    /// Creates a new, empty `EntityStore`
-    pub fn init() -> Self {
-        Self {
-            entities: Vec::new(),
-            freed: Vec::new(),
+    pub fn entity_status(&self, id: EntityId) -> Result<Option<Location>, EntityError> {
+        let entity: &Entity = self
+            .entities
+            .get(id.id as usize)
+            .expect("expected to find entity");
+        if id.generation == entity.generation {
+            Ok(entity.location)
+        } else {
+            Err(EntityError::WrongGen)
         }
-    }
-
-    fn entity_status(&self, id: EntityId) -> Result<Option<Location>, EntityError> {
-        let location = self.entities.get(id.id as usize)
-            .ok_or(EntityError::NotFound)?
-            .location;
-
-        Ok(location)
     }
 
     /// Mutably gets an entity matching by both index and generation
     fn get_mut_entity(&mut self, id: EntityId) -> &mut Entity {
-        self.entities.get_mut(id.id as usize).expect("expected to find entity")
+        self.entities
+            .get_mut(id.id as usize)
+            .expect("expected to find entity")
     }
 
     /// Allocates new `entity`s into the `entities` collection, returning their ids
     fn seed_new_ids(&mut self, count: u32) -> Result<Range<u32>, EntityError> {
-        let entities_len = self.entities.len() as u32;
+        let old_count = self.count;
 
-        if let Some(new_len) = entities_len.checked_add(count) {
-            self.entities.extend(
-                (entities_len..new_len).map(|_| Entity::default())
-            );
+        if let Some(new_count) = old_count.checked_add(count) {
+            self.count = new_count;
+            self.entities
+                .extend((old_count..new_count).map(|_| Entity::default()));
 
-            Ok(entities_len..new_len)
-        }
-        else {
-            Err(EntityError::TooManyEntities("".into()))
+            Ok(old_count..new_count)
+        } else {
+            Err(EntityError::TooManyEntities)
         }
     }
 
@@ -96,20 +88,23 @@ impl EntityStore {
     /// by creating new ids as a fallback
     pub fn get_new_ids(&mut self, count: u32) -> Result<Vec<EntityId>, EntityError> {
         let free_count = count.min(self.freed.len() as u32);
-        let mut ids: Vec<EntityId> = self.freed.drain(self.freed.len() - free_count as usize..)
+        let mut ids: Vec<EntityId> = self
+            .freed
+            .drain(self.freed.len() - free_count as usize..)
             .map(|id| {
                 let generation = self.entities[id as usize].generation;
                 EntityId { id, generation }
             })
             .collect();
-        
+
         if count > free_count {
             ids.extend(
-                &mut self.seed_new_ids(count - free_count)?
-                .map(|id| EntityId { id, generation: 0, })
+                &mut self
+                    .seed_new_ids(count - free_count)?
+                    .map(|id| EntityId { id, generation: 0 }),
             );
         }
-        
+
         Ok(ids)
     }
 
@@ -117,20 +112,24 @@ impl EntityStore {
     pub fn get_new_id(&mut self) -> Result<EntityId, EntityError> {
         if let Some(id) = self.freed.pop() {
             let generation: u32 = self.entities[id as usize].generation;
-            Ok(EntityId {id, generation,})
-        }
-        else {
-            let id: u32 = u32::try_from(self.entities.len())?;
+
+            Ok(EntityId { id, generation })
+        } else if self.count < u32::MAX {
+            let id: u32 = self.count;
+            self.count += 1;
             self.entities.push(Entity::default());
-            Ok(EntityId { id, generation: 0, })
+
+            Ok(EntityId { id, generation: 0 })
+        } else {
+            Err(EntityError::TooManyEntities)
         }
     }
 
     /// Resets the location for a given `EntityId`, adding it to the `freed` list
-    /// 
+    ///
     /// Returns the freed location, expecting this data to be cleared
     pub fn free(&mut self, id: EntityId) -> Result<Location, EntityError> {
-        let location = self.get_location(id)?;
+        let location = self.entity_status(id)?.ok_or(EntityError::AlreadyFreed)?;
         let entity: &mut Entity = self.get_mut_entity(id);
         entity.location = None;
         entity.generation += 1;
@@ -139,29 +138,143 @@ impl EntityStore {
         Ok(location)
     }
 
-    pub fn get_location(&self, id: EntityId) -> Result<Location, EntityError> {
-        self.entity_status(id)?
-            .ok_or(EntityError::AlreadyFreed)
-    }
-
     /// Updates the inner `Location` for a given `EntityId`
-    /// 
+    ///
     /// # !!! Expects previous location to be irrelevant. Can cause storage leaks otherwise !!!
-    pub fn set_location(&mut self, id: EntityId, location: Location) {
+    pub fn set_location(&mut self, id: EntityId, location: Location) -> Option<Location> {
         let entity: &mut Entity = self.get_mut_entity(id);
+        let old_location: Option<Location> = entity.location;
         entity.location = Some(location);
+
+        old_location
     }
 
     /// Updates the locations of continuous `Entities` within an archetype
-    /// 
+    ///
     /// # !!! Expects previous location to be irrelevant. Can cause storage leaks otherwise !!!
     pub fn set_many_location(&mut self, ids: &[EntityId], start: Location) {
         for (count, id) in ids.iter().cloned().enumerate() {
             let entity: &mut Entity = self.get_mut_entity(id);
             entity.location = Some(Location {
                 archetype: start.archetype,
-                row: start.row + count
+                row: start.row + count,
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mock_entity(generation: u32, location: Option<Location>) -> Entity {
+        Entity {
+            location,
+            generation,
+        }
+    }
+
+    #[test]
+    fn test_get_new_id() -> Result<(), EntityError> {
+        let mut store: EntityStore = EntityStore::default();
+
+        let id: EntityId = store.get_new_id()?;
+
+        assert!(
+            id == EntityId {
+                id: 0,
+                generation: 0
+            }
+        );
+        assert!(store.entity_status(id)?.is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_new_id_freed() -> Result<(), EntityError> {
+        let mut store: EntityStore = EntityStore {
+            entities: Vec::from([mock_entity(1, None)]),
+            freed: Vec::from([0]),
+            count: 1,
+        };
+
+        let id: EntityId = store.get_new_id()?;
+
+        assert!(
+            id == EntityId {
+                id: 0,
+                generation: 1,
+            }
+        );
+        assert!(store.entity_status(id)?.is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_new_id_full() -> Result<(), EntityError> {
+        let mut store: EntityStore = EntityStore {
+            entities: Vec::new(),
+            freed: Vec::new(),
+            count: u32::MAX,
+        };
+
+        let id = store.get_new_id();
+
+        assert!(id.is_err());
+        assert!(matches!(id.unwrap_err(), EntityError::TooManyEntities));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_free_id() -> Result<(), EntityError> {
+        let location = Location::new(0, 0);
+
+        let mut store: EntityStore = EntityStore {
+            entities: Vec::from([mock_entity(0, Some(location))]),
+            freed: Vec::new(),
+            count: 1,
+        };
+
+        let mut id: EntityId = EntityId {
+            id: 0,
+            generation: 0,
+        };
+
+        let free_res: Result<Location, EntityError> = store.free(id);
+
+        assert!(free_res.is_ok() && free_res? == location);
+
+        assert!(store.freed[0] == id.id);
+        assert!(store.entity_status(id).is_err());
+
+        id.generation += 1;
+        assert!(store.entity_status(id)?.is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_set_location() {
+        let location = Location::new(0, 0);
+
+        let mut store = EntityStore {
+            entities: Vec::from([Entity::default()]),
+            freed: Vec::new(),
+            count: 1,
+        };
+
+        let previous: Option<Location> = store.set_location(
+            EntityId {
+                id: 0,
+                generation: 0,
+            },
+            location,
+        );
+
+        assert!(previous.is_none());
+        assert!(store.entities[0].location == Some(location));
     }
 }

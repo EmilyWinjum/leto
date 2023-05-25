@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{error::Error, num::TryFromIntError};
+use std::error::Error;
 
 #[derive(Debug)]
 pub enum EcsError {
@@ -28,7 +28,6 @@ impl From<ArchetypeError> for EcsError {
     }
 }
 
-
 #[derive(Debug)]
 pub enum StoreError {
     CannotCastToType,
@@ -48,10 +47,9 @@ impl fmt::Display for StoreError {
 
 impl Error for StoreError {}
 
-
 #[derive(Debug)]
 pub enum EntityError {
-    TooManyEntities(String),
+    TooManyEntities,
     FreedListTooSmall,
     NotFound,
     WrongGen,
@@ -61,28 +59,16 @@ pub enum EntityError {
 impl fmt::Display for EntityError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad(match self {
-            Self::TooManyEntities(message) => 
-                format!("too many entities{}", message),
-            Self::FreedListTooSmall => 
-                "freed list is too small for request".to_string(),
-            Self::NotFound => 
-                "entity not found".to_string(),
-            Self::WrongGen => 
-                "generations don't match".to_string(),
-            Self::AlreadyFreed => 
-                "entity already freed".to_string(),
-        }.as_str())
+            Self::TooManyEntities => "too many entities",
+            Self::FreedListTooSmall => "freed list is too small for request",
+            Self::NotFound => "entity not found",
+            Self::WrongGen => "generations don't match",
+            Self::AlreadyFreed => "entity already freed",
+        })
     }
 }
 
 impl Error for EntityError {}
-
-impl From<TryFromIntError> for EntityError {
-    fn from(err: TryFromIntError) -> Self {
-        Self::TooManyEntities(format!(": ({})", err))
-    }
-}
-
 
 #[derive(Debug)]
 pub enum ArchetypeError {

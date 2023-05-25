@@ -1,5 +1,5 @@
-pub mod world;
 pub mod archetype;
-pub mod entity;
 pub mod component;
+pub mod entity;
 pub mod errors;
+pub mod world;

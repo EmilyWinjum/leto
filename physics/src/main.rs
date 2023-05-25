@@ -1,8 +1,7 @@
-
 fn main() {
     /*
     let mut world = register::Register::new();
-    
+
     // Icarus's health is *not* looking good.
     // world.new_entity(Some(Health(-10)), Some(Name("Icarus")));
     let icarus = world.new_entity();
@@ -32,7 +31,7 @@ fn main() {
             } else {
                 println!("{} is still healthy", name.0);
             }
-    
+
             if name.0 == "Icarus" && health.0 <= 0 {
                 *health = Health(100);
                 println!("{} has been revived! Health to {}", name.0, health.0);
