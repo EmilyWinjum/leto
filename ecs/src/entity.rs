@@ -23,6 +23,7 @@ pub struct Location {
 }
 
 impl Location {
+    /// Generate a new location with given archetype and row
     pub fn new(archetype: usize, row: usize) -> Self {
         Self { archetype, row }
     }
@@ -50,11 +51,12 @@ pub struct EntityStore {
 }
 
 impl EntityStore {
+    /// Get the location option from the target entity, returning an error if nothing was found
     pub fn entity_status(&self, id: EntityId) -> Result<Option<Location>, EntityError> {
         let entity: &Entity = self
             .entities
             .get(id.id as usize)
-            .expect("expected to find entity");
+            .ok_or(EntityError::NotFound)?;
         if id.generation == entity.generation {
             Ok(entity.location)
         } else {
@@ -63,10 +65,10 @@ impl EntityStore {
     }
 
     /// Mutably gets an entity matching by both index and generation
-    fn get_mut_entity(&mut self, id: EntityId) -> &mut Entity {
+    fn get_mut_entity(&mut self, id: EntityId) -> Result<&mut Entity, EntityError> {
         self.entities
             .get_mut(id.id as usize)
-            .expect("expected to find entity")
+            .ok_or(EntityError::NotFound)
     }
 
     /// Allocates new `entity`s into the `entities` collection, returning their ids
@@ -127,10 +129,10 @@ impl EntityStore {
 
     /// Resets the location for a given `EntityId`, adding it to the `freed` list
     ///
-    /// Returns the freed location, expecting this data to be cleared
+    /// Returns the freed location, expecting this data to be cleared in its `Archetype`
     pub fn free(&mut self, id: EntityId) -> Result<Location, EntityError> {
-        let location = self.entity_status(id)?.ok_or(EntityError::AlreadyFreed)?;
-        let entity: &mut Entity = self.get_mut_entity(id);
+        let location: Location = self.entity_status(id)?.ok_or(EntityError::AlreadyFreed)?;
+        let entity: &mut Entity = self.get_mut_entity(id).unwrap();
         entity.location = None;
         entity.generation += 1;
         self.freed.push(id.id);
@@ -140,21 +142,21 @@ impl EntityStore {
 
     /// Updates the inner `Location` for a given `EntityId`
     ///
-    /// # !!! Expects previous location to be irrelevant. Can cause storage leaks otherwise !!!
+    /// Returns the freed location, expecting this data to be or have been cleared already in its `Archetype`
     pub fn set_location(&mut self, id: EntityId, location: Location) -> Option<Location> {
-        let entity: &mut Entity = self.get_mut_entity(id);
+        let entity: &mut Entity = self.get_mut_entity(id).unwrap();
         let old_location: Option<Location> = entity.location;
         entity.location = Some(location);
 
         old_location
     }
 
-    /// Updates the locations of continuous `Entities` within an archetype
+    /// Updates the locations of continuous `Entities` within an `Archetype`
     ///
-    /// # !!! Expects previous location to be irrelevant. Can cause storage leaks otherwise !!!
+    /// Expects all provided ids to contain no `Locations`
     pub fn set_many_location(&mut self, ids: &[EntityId], start: Location) {
         for (count, id) in ids.iter().cloned().enumerate() {
-            let entity: &mut Entity = self.get_mut_entity(id);
+            let entity: &mut Entity = self.get_mut_entity(id).unwrap();
             entity.location = Some(Location {
                 archetype: start.archetype,
                 row: start.row + count,
@@ -254,6 +256,44 @@ mod tests {
         assert!(store.entity_status(id)?.is_none());
 
         Ok(())
+    }
+
+    #[test]
+    fn test_free_id_bad_id() {
+        let bad_id: EntityId = EntityId {
+            id: 0,
+            generation: 0,
+        };
+
+        let mut store: EntityStore = EntityStore {
+            entities: Vec::new(),
+            freed: Vec::new(),
+            count: 0,
+        };
+
+        let free_res: Result<Location, EntityError> = store.free(bad_id);
+
+        assert!(free_res.is_err());
+        assert!(matches!(free_res.unwrap_err(), EntityError::NotFound));
+    }
+
+    #[test]
+    fn test_free_id_already_freed() {
+        let id: EntityId = EntityId {
+            id: 0,
+            generation: 0,
+        };
+
+        let mut store: EntityStore = EntityStore {
+            entities: Vec::from([mock_entity(id.generation, None)]),
+            freed: Vec::new(),
+            count: 1,
+        };
+
+        let free_res: Result<Location, EntityError> = store.free(id);
+
+        assert!(free_res.is_err());
+        assert!(matches!(free_res.unwrap_err(), EntityError::AlreadyFreed));
     }
 
     #[test]
