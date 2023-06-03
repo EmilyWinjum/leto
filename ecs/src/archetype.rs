@@ -26,7 +26,7 @@ impl Archetype {
         let mut storage: Vec<ComponentStore> = Vec::new();
         bundle.component_iter().enumerate().for_each(|(idx, comp)| {
             index.insert(comp.type_id(), idx);
-            storage.push(ComponentStore::new(comp));
+            storage.push(comp.create_store());
         });
 
         Self {
@@ -49,7 +49,7 @@ impl Archetype {
         let row = self.entities.len();
         for comp in bundle.component_iter() {
             self.get_storage_mut(comp.type_id())
-                .expect("should match storage types with bundle")
+                .expect("expected storage indicies to match bundle")
                 .push(comp)
                 .expect("expected to push");
         }
@@ -111,8 +111,8 @@ impl Archetype {
     pub fn migrate_to_bundle(&mut self, row: usize) -> (EntityId, ComponentBundle) {
         let mut bundle: ComponentBundle = ComponentBundle::default();
         for idx in self.index.values() {
-            let comp: ComponentBox = self.storage[*idx].swap_remove_to_box(row);
-            bundle.push(comp);
+            let comp: ComponentBox = self.storage[*idx].swap_remove(row);
+            bundle.insert(comp);
         }
         let entity = self.get_last_entity();
         self.entities.swap_remove(row);
