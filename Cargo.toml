@@ -2,5 +2,6 @@
 
 members = [
     "ecs",
+    "ecs/ecs_derive",
     "physics",
 ]
