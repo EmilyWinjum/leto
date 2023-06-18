@@ -54,7 +54,7 @@ impl Entity {
 /// for reuse.
 ///
 /// `EntityStore`s track all `EntityId`s and ensures their uniqueness.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct EntityStore {
     entities: Vec<Entity>,
     freed: Vec<u32>,

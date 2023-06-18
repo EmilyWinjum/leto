@@ -3,8 +3,10 @@ use std::{any::TypeId, collections::HashMap};
 use crate::{
     archetype::{Archetype, Migration},
     bundle::{ComponentBundle, TypeBundle},
+    component::{ReadGuard, WriteGuard},
     entity::{EntityId, EntityStore, Location},
     errors::{EcsError, EntityError},
+    query::QueryModel,
 };
 
 pub struct World {
@@ -29,13 +31,13 @@ impl World {
         let entity: EntityId = self.entities.get_new_id()?;
         let types: TypeBundle = bundle.types();
 
-        let location: Location = if let Some(archetype_id) = self.get_archetype_id(&types.clone()) {
+        let location: Location = if let Some(archetype_id) = self.get_archetype_id(&types) {
             Location::new(
                 archetype_id,
                 self.archetypes[archetype_id].add(bundle, entity),
             )
         } else {
-            Location::new(self.push_archetype(bundle, types, entity), 0)
+            Location::new(self.push_archetype(bundle, entity), 0)
         };
 
         self.entities.set_location(entity, location);
@@ -51,7 +53,7 @@ impl World {
         let source_idx: usize = location.archetype;
         let new_type: TypeId = match &op {
             Migration::Add(comp) => {
-                let add = comp.inner_type_id();
+                let add: TypeId = comp.inner_type_id();
                 assert!(!self.archetypes[source_idx].has_type(add));
                 add
             }
@@ -78,20 +80,18 @@ impl World {
                 old_bundle.remove_type(new_type)
             };
 
-            let target_idx = if let Some(target_idx) = self.get_archetype_id(&type_bundle.clone()) {
+            let target_idx: usize = if let Some(target_idx) = self.get_archetype_id(&type_bundle) {
                 let (source, target) = self.mutate_archetypes(source_idx, target_idx);
                 (moved, new_row) = source.migrate(target, location.row, op);
 
                 target_idx
             } else {
-                let migration = self.archetypes[source_idx].migrate_to_bundle(location.row);
-                (moved, new_row) = (migration.0, 0);
-                let target_idx = self.archetypes.len();
-                let new_archetype = Archetype::new(migration.1, entity);
-                self.index.insert(type_bundle, target_idx);
-                self.archetypes.push(new_archetype);
+                let migration: (EntityId, ComponentBundle) =
+                    self.archetypes[source_idx].migrate_to_bundle(location.row, op);
 
-                target_idx
+                moved = migration.0;
+                new_row = 0;
+                self.push_archetype(migration.1, entity)
             };
 
             self.archetypes[source_idx]
@@ -118,6 +118,20 @@ impl World {
         Ok(())
     }
 
+    pub fn run_system<M, F>(&self, system: &mut F)
+    where
+        M: QueryModel,
+        for<'m> F: FnMut(M::Row<'m>),
+    {
+        let bundle: TypeBundle = M::get_types();
+        let archetypes: Vec<&Archetype> = self.get_archetypes_inclusive(&bundle);
+        for &at in archetypes.iter() {
+            let reads: Vec<ReadGuard> = M::get_reads(at);
+            let writes: Vec<WriteGuard> = M::get_writes(at);
+            M::process(reads, writes, system);
+        }
+    }
+
     pub fn get_archetypes_inclusive(&self, types: &TypeBundle) -> Vec<&Archetype> {
         self.inclusive_index
             .get(types)
@@ -132,12 +146,8 @@ impl World {
         self.index.get(types).copied()
     }
 
-    fn push_archetype(
-        &mut self,
-        bundle: ComponentBundle,
-        types: TypeBundle,
-        entity: EntityId,
-    ) -> usize {
+    fn push_archetype(&mut self, bundle: ComponentBundle, entity: EntityId) -> usize {
+        let types: TypeBundle = bundle.types();
         let archetype_id: usize = self.archetypes.len();
         self.index.insert(types.clone(), archetype_id);
         self.archetypes.push(Archetype::new(bundle, entity));

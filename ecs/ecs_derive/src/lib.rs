@@ -11,11 +11,11 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
     let name = input.ident;
 
     let expanded = quote! {
-        impl Component for #name {
+        impl ecs::component::Component for #name {
             fn to_any(self: Box<Self>) -> Box<dyn std::any::Any> {
                 self
             }
-            fn to_store(self: Box<Self>) -> ComponentStore {
+            fn to_store(self: Box<Self>) -> ecs::component::ComponentStore {
                 (*self).into()
             }
         }
@@ -24,8 +24,8 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
     proc_macro::TokenStream::from(expanded)
 }
 
-#[proc_macro_derive(Model)]
-pub fn derive_model(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(QueryModel)]
+pub fn derive_query_model(input: TokenStream) -> TokenStream {
     let input: DeriveInput = parse_macro_input!(input as DeriveInput);
 
     let name = input.ident;
@@ -41,6 +41,7 @@ pub fn derive_model(input: TokenStream) -> TokenStream {
 
     let mut ref_names: Vec<_> = Vec::new();
     let mut mut_names: Vec<_> = Vec::new();
+    let mut names: Vec<_> = Vec::new();
 
     let mut ref_elems: Vec<_> = Vec::new();
     let mut mut_elems: Vec<_> = Vec::new();
@@ -48,6 +49,8 @@ pub fn derive_model(input: TokenStream) -> TokenStream {
     for field in fields.iter() {
         if let syn::Type::Reference(ty) = &field.ty {
             field_types.push(&ty.elem);
+            let ident_clone = field.ident.clone();
+            names.push(ident_clone.unwrap());
 
             if ty.mutability.is_none() {
                 ref_names.push(&field.ident);
@@ -59,11 +62,13 @@ pub fn derive_model(input: TokenStream) -> TokenStream {
         }
     }
 
+    let first_name = names[0].clone();
+
     let ref_idx: Vec<_> = ref_elems.iter().enumerate().map(|(idx, _)| idx).collect();
     let mut_idx: Vec<_> = mut_elems.iter().enumerate().map(|(idx, _)| idx).collect();
 
     let expanded = quote! {
-        impl Model for #name<'_> {
+        impl ecs::query::QueryModel for #name<'_> {
             type Row<'r> = #name<'r>;
 
             fn get_types() -> ecs::bundle::TypeBundle {
@@ -81,30 +86,27 @@ pub fn derive_model(input: TokenStream) -> TokenStream {
             fn process<F>(
                 reads: Vec<ecs::component::ReadGuard>,
                 mut writes: Vec<ecs::component::WriteGuard>,
-                row: usize,
                 system: &mut F,
             ) where
                 for<'f> F: FnMut(Self::Row<'f>),
             {
-                #(let #ref_names: &#ref_elems = reads[#ref_idx]
+                #(let #ref_names = reads[#ref_idx]
                     .to_any()
                     .downcast_ref::<Vec<#ref_elems>>()
-                    .unwrap()
-                    .get(row)
                     .unwrap();)
                 *
 
-                #(let #mut_names: &mut #mut_elems = writes[#mut_idx]
+                #(let #mut_names = writes[#mut_idx]
                     .to_any_mut()
                     .downcast_mut::<Vec<#mut_elems>>()
-                    .unwrap()
-                    .get_mut(row)
                     .unwrap();)
                 *
 
-                let row: Self::Row<'_> = #name { #(#ref_names), *, #(#mut_names), * };
+                for idx in 0..#first_name.len() {
+                    let row: Self::Row<'_> = #name { #(#ref_names: &#ref_names[idx]), *, #(#mut_names: &mut #mut_names[idx]), * };
 
-                system(row);
+                    system(row);
+                }
             }
 
         }

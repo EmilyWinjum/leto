@@ -19,8 +19,8 @@ pub struct Archetype {
 }
 
 impl Archetype {
-    fn get_last_entity(&self) -> EntityId {
-        self.entities()[self.entities().len()]
+    fn get_last_entity(&self) -> Option<EntityId> {
+        self.entities().last().copied()
     }
 
     pub fn entities(&self) -> RwLockReadGuard<Vec<EntityId>> {
@@ -81,7 +81,7 @@ impl Archetype {
     }
 
     pub fn remove(&self, row: usize) -> EntityId {
-        let entity: EntityId = self.get_last_entity();
+        let entity: EntityId = self.get_last_entity().unwrap();
         for idx in self.index.values() {
             self.storage[*idx].inner_mut().swap_remove(row);
         }
@@ -90,7 +90,7 @@ impl Archetype {
     }
 
     pub fn migrate(&self, target: &mut Self, row: usize, op: Migration) -> (EntityId, usize) {
-        let moved: EntityId = self.get_last_entity();
+        let moved: EntityId = self.get_last_entity().unwrap();
         let target_row = target.entities().len();
         let current = self.entities_mut().swap_remove(row);
         target.entities_mut().push(current);
@@ -124,13 +124,19 @@ impl Archetype {
         (moved, target_row)
     }
 
-    pub fn migrate_to_bundle(&self, row: usize) -> (EntityId, ComponentBundle) {
+    pub fn migrate_to_bundle(&self, row: usize, op: Migration) -> (EntityId, ComponentBundle) {
         let mut bundle: ComponentBundle = ComponentBundle::default();
         for idx in self.index.values() {
             let comp: ComponentBox = self.storage[*idx].inner_mut().swap_remove(row);
-            bundle.insert(comp);
+            bundle.insert_box(comp);
         }
-        let entity = self.get_last_entity();
+        match op {
+            Migration::Add(comp) => bundle.insert_box(comp),
+            Migration::Remove(ty) => {
+                bundle.remove(ty).unwrap();
+            }
+        };
+        let entity = self.get_last_entity().unwrap();
         self.entities_mut().swap_remove(row);
 
         (entity, bundle)

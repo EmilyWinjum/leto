@@ -163,7 +163,7 @@ pub type WriteGuard<'s> = RwLockWriteGuard<'s, dyn ComponentVec + 'static>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_structs::*;
+    use crate::test_utils::*;
 
     #[test]
     fn test_component_box_cast_inner_fails() {

@@ -4,12 +4,15 @@ use std::{
     vec::IntoIter,
 };
 
-use crate::{component::ComponentBox, errors::StoreError};
+use crate::{
+    component::{Component, ComponentBox},
+    errors::StoreError,
+};
 
 /// Defines the type identifier for an `Archetype`. all immutable instances are sorted
 ///
 /// Uses a `BTreeSet` to remain hashable
-#[derive(Default, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct TypeBundle(BTreeSet<TypeId>);
 
 impl TypeBundle {
@@ -59,8 +62,15 @@ pub struct ComponentBundle {
 }
 
 impl ComponentBundle {
-    /// Add a `ComponentBox` to the bundle
-    pub fn insert(&mut self, comp: ComponentBox) {
+    /// Add a raw `Component` to the bundle
+    pub fn insert<T: Component>(mut self, comp: T) -> Self {
+        self.index.insert(TypeId::of::<T>(), self.index.len());
+        self.components.push(comp.into());
+        self
+    }
+
+    /// Add a `ComponentBox` to the bundle as a non-consuming reference
+    pub fn insert_box(&mut self, comp: ComponentBox) {
         self.index.insert(comp.inner_type_id(), self.index.len());
         self.components.push(comp);
     }
@@ -97,14 +107,11 @@ impl ComponentBundle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_structs::*;
+    use crate::test_utils::*;
 
     #[test]
     fn test_component_bundle_push() {
-        let mut bundle: ComponentBundle = ComponentBundle::default();
-        println!("{:?}", bundle.types().0);
-
-        bundle.insert(ComponentBox::new(TestCompA::default()));
+        let mut bundle: ComponentBundle = ComponentBundle::default().insert(TestCompA::default());
 
         assert!(bundle.types().0 == BTreeSet::from([TypeId::of::<TestCompA>()]));
         assert!(
@@ -120,17 +127,11 @@ mod tests {
 
     #[test]
     fn test_component_bundle_remove() {
-        let mut bundle: ComponentBundle = ComponentBundle {
-            index: HashMap::new(),
-            components: Vec::new(),
-        };
-
-        bundle.insert(TestCompA::default().into());
-        bundle.insert(TestCompB::default().into());
+        let mut bundle: ComponentBundle = ComponentBundle::default()
+            .insert(TestCompA::default())
+            .insert(TestCompB::default());
 
         let res: Result<ComponentBox, StoreError> = bundle.remove(TypeId::of::<TestCompA>());
-
-        println!("{:?}", bundle.index.len());
 
         assert!(res.is_ok());
         assert!(res.unwrap().cast_inner::<TestCompA>().unwrap() == TestCompA::default());
