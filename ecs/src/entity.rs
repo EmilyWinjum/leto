@@ -39,11 +39,22 @@ pub struct Entity {
     location: Option<Location>,
 }
 
+impl Entity {
+    /// checks the generation of a given `Entity` against the given target value
+    fn check_generation(&self, gen: u32) -> Result<(), EntityError> {
+        if gen == self.generation {
+            Ok(())
+        } else {
+            Err(EntityError::WrongGen)
+        }
+    }
+}
+
 /// Defines an `EntityStore`. Contains a list of `Entity`s in service as well as freed `EntityId`s
 /// for reuse.
 ///
 /// `EntityStore`s track all `EntityId`s and ensures their uniqueness.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct EntityStore {
     entities: Vec<Entity>,
     freed: Vec<u32>,
@@ -57,23 +68,25 @@ impl EntityStore {
             .entities
             .get(id.id as usize)
             .ok_or(EntityError::NotFound)?;
-        if id.generation == entity.generation {
-            Ok(entity.location)
-        } else {
-            Err(EntityError::WrongGen)
-        }
+
+        entity
+            .check_generation(id.generation)
+            .and(Ok(entity.location))
     }
 
     /// Mutably gets an entity matching by both index and generation
     fn get_mut_entity(&mut self, id: EntityId) -> Result<&mut Entity, EntityError> {
-        self.entities
+        let entity: &mut Entity = self
+            .entities
             .get_mut(id.id as usize)
-            .ok_or(EntityError::NotFound)
+            .ok_or(EntityError::NotFound)?;
+
+        entity.check_generation(id.generation).and(Ok(entity))
     }
 
     /// Allocates new `entity`s into the `entities` collection, returning their ids
     fn seed_new_ids(&mut self, count: u32) -> Result<Range<u32>, EntityError> {
-        let old_count = self.count;
+        let old_count: u32 = self.count;
 
         if let Some(new_count) = old_count.checked_add(count) {
             self.count = new_count;
@@ -89,7 +102,7 @@ impl EntityStore {
     /// Gets a collection of unique `EntityId`s from a combination of the `freed` list or
     /// by creating new ids as a fallback
     pub fn get_new_ids(&mut self, count: u32) -> Result<Vec<EntityId>, EntityError> {
-        let free_count = count.min(self.freed.len() as u32);
+        let free_count: u32 = count.min(self.freed.len() as u32);
         let mut ids: Vec<EntityId> = self
             .freed
             .drain(self.freed.len() - free_count as usize..)
@@ -131,13 +144,13 @@ impl EntityStore {
     ///
     /// Returns the freed location, expecting this data to be cleared in its `Archetype`
     pub fn free(&mut self, id: EntityId) -> Result<Location, EntityError> {
-        let location: Location = self.entity_status(id)?.ok_or(EntityError::AlreadyFreed)?;
-        let entity: &mut Entity = self.get_mut_entity(id).unwrap();
+        let entity: &mut Entity = self.get_mut_entity(id)?;
+        let old_location: Location = entity.location.ok_or(EntityError::AlreadyFreed)?;
         entity.location = None;
         entity.generation += 1;
         self.freed.push(id.id);
 
-        Ok(location)
+        Ok(old_location)
     }
 
     /// Updates the inner `Location` for a given `EntityId`
@@ -157,10 +170,7 @@ impl EntityStore {
     pub fn set_many_location(&mut self, ids: &[EntityId], start: Location) {
         for (count, id) in ids.iter().cloned().enumerate() {
             let entity: &mut Entity = self.get_mut_entity(id).unwrap();
-            entity.location = Some(Location {
-                archetype: start.archetype,
-                row: start.row + count,
-            })
+            entity.location = Some(Location::new(start.archetype, start.row + count))
         }
     }
 }
