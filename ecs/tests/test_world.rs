@@ -1,23 +1,8 @@
+mod utils;
+use utils::*;
+
 use ecs::{archetype::Migration, bundle::ComponentBundle, world::World};
-use ecs_derive::{Component, QueryModel};
-
-#[derive(Component, Default, PartialEq, Debug)]
-pub struct TestCompA {
-    _one: u32,
-    _two: String,
-}
-
-#[derive(Component, Default, PartialEq, Debug)]
-pub struct TestCompB {
-    _three: u32,
-    _four: String,
-}
-
-#[derive(Component, Default, PartialEq, Debug)]
-pub struct TestCompC {
-    _five: u32,
-    _six: String,
-}
+use ecs_derive::QueryModel;
 
 #[derive(QueryModel)]
 pub struct TestDataA<'a> {
@@ -27,14 +12,14 @@ pub struct TestDataA<'a> {
 }
 
 fn test_system(row: TestDataA) {
-    let a = row.comp_a;
-    let mut b = row.comp_b;
-    let c = row.comp_c;
+    let a: &TestCompA = row.comp_a;
+    let mut b: &mut TestCompB = row.comp_b;
+    let c: &TestCompC = row.comp_c;
 
     println!("{:?}, {:?}, {:?}", a, b, c);
 
-    b._three += 5;
-    b._four = "Five".to_string();
+    b.three += 5.;
+    b.four = "Five".to_string();
 
     println!("{:?}, {:?}, {:?}", a, b, c);
 }
