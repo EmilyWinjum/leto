@@ -164,3 +164,15 @@ impl Migration {
         matches!(self, Self::Add(_))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_last_entity() {
+        let at = Archetype::default();
+
+        assert!(at.get_last_entity().is_none());
+    }
+}
