@@ -64,8 +64,10 @@ pub fn derive_query_model(input: TokenStream) -> TokenStream {
 
     let first_name = names[0].clone();
 
+    let mut_iter_names = mut_names.iter().rev();
+    let mut_iter_elems = mut_elems.iter().rev();
+
     let ref_idx: Vec<_> = ref_elems.iter().enumerate().map(|(idx, _)| idx).collect();
-    let mut_idx: Vec<_> = mut_elems.iter().enumerate().map(|(idx, _)| idx).collect();
 
     let expanded = quote! {
         impl ecs::query::QueryModel for #name<'_> {
@@ -96,9 +98,9 @@ pub fn derive_query_model(input: TokenStream) -> TokenStream {
                     .unwrap();)
                 *
 
-                #(let #mut_names = writes[#mut_idx]
-                    .to_any_mut()
-                    .downcast_mut::<Vec<#mut_elems>>()
+                #(let mut temp = writes.pop().unwrap();
+                let #mut_iter_names = temp.to_any_mut()
+                    .downcast_mut::<Vec<#mut_iter_elems>>()
                     .unwrap();)
                 *
 

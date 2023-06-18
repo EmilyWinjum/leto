@@ -1,7 +1,3 @@
 [workspace]
 
-members = [
-    "ecs",
-    "ecs/ecs_derive",
-    "physics",
-]
+members = ["ecs", "physics"]
