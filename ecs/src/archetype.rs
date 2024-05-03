@@ -31,11 +31,10 @@ impl Archetype {
         self.entities.write().unwrap()
     }
 
-    pub fn get_storage(&self, type_id: TypeId) -> Result<&ComponentStore, StoreError> {
+    pub fn get_storage(&self, type_id: TypeId) -> Option<&ComponentStore> {
         self.index
             .get(&type_id)
             .map(|&idx| &self.storage[idx])
-            .ok_or(StoreError::StorageNotFound)
     }
 
     pub fn get_entity(&self, row: usize) -> Option<EntityId> {
